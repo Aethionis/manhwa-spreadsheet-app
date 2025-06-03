@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Manhwa Filter App</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 1rem;
+      line-height: 1.5;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 1rem;
+    }
+    th, td {
+      border: 1px solid #999;
+      padding: 0.5rem;
+      text-align: left;
+    }
+    th {
+      background: #f0f0f0;
+    }
+    .filter-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    .filter-box {
+      display: flex;
+      flex-direction: column;
+      margin-bottom: 0.5rem;
+    }
+    label {
+      font-size: 0.9rem;
+      margin-bottom: 0.25rem;
+    }
+    input, select {
+      padding: 0.4rem;
+      font-size: 1rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      width: 200px;
+    }
+    @media (max-width: 600px) {
+      input, select {
+        width: 100%;
+      }
+      .filter-container {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>📚 Manhwa Filter App</h1>
+  <p>Filter by Genre, Category, Release Year, Rating, etc. (Desktop only for filters; mobile will show the filters but you may need to scroll.)</p>
+
+  <div class="filter-container" id="filters"></div>
+
+  <table id="data-table">
+    <thead>
+      <tr id="header-row"></tr>
+    </thead>
+    <tbody id="body-rows"></tbody>
+  </table>
+
+  <script>
+    (async function() {
+      // 1. Fetch the raw JSON from the gviz endpoint
+      const SHEET_ID = '1ZluFOVtJCv-cQLXWhmCLNoZFIMLV0eTrqozwyEb1zw8';
+      const TAB_NAME = encodeURIComponent('Copy of Master List');
+      const GVIZ_URL = 
+        `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?sheet=${TAB_NAME}&tqx=out:json`;
+
+      let raw = await fetch(GVIZ_URL).then(r => r.text());
+      // Strip off the prefix/suffix
+      raw = raw.replace(/^[\s\S]*?\({/, '{').replace(/}\);?[\s\S]*$/, '}');
+      const dataObj = JSON.parse(raw);
+
+      // 2. Extract column headers from row 8 (A1 notation => index 7 in rows)
+      // Actually, visualization API returns columns as .cols, and rows as .rows
+      // But row 8 (header row) is encoded as row index 7 in dataObj.table.rows, if the sheet didn't hide rows.
+      // Some public sheets push header row into .cols[].label automatically. Let's inspect:
+      const cols = dataObj.table.cols.map(c => c.label || c.id);
+      // Some fields might have blank labels, so fallback to id (A, B, C).
+      // Rows:
+      const rows = dataObj.table.rows.map(r => {
+        const obj = {};
+        r.c.forEach((cell, idx) => {
+          obj[cols[idx]] = (cell && cell.v !== null) ? cell.v : '';
+        });
+        return obj;
+      });
+
+      // 3. Build filter UI dynamically (for each column)
+      const filterContainer = document.getElementById('filters');
+      const filterState = {}; // { columnName: currentFilterValue, ... }
+
+      cols.forEach(colName => {
+        // Create <div> to hold label + input
+        const box = document.createElement('div');
+        box.className = 'filter-box';
+
+        const lbl = document.createElement('label');
+        lbl.textContent = colName;
+        lbl.setAttribute('for', `filter-${colName}`);
+        box.appendChild(lbl);
+
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.id = `filter-${colName}`;
+        inp.placeholder = `Text contains…`;
+        inp.addEventListener('input', () => {
+          filterState[colName] = inp.value.trim().toLowerCase();
+          renderTable(); 
+        });
+        box.appendChild(inp);
+        filterContainer.appendChild(box);
+
+        filterState[colName] = '';
+      });
+
+      // 4. Set up table headers
+      const headerRow = document.getElementById('header-row');
+      cols.forEach(colName => {
+        const th = document.createElement('th');
+        th.textContent = colName;
+        headerRow.appendChild(th);
+      });
+
+      // 5. Function to render table rows based on current filters
+      function renderTable() {
+        const tbody = document.getElementById('body-rows');
+        tbody.innerHTML = ''; // clear
+
+        // Filter logic: for each row, for every column where filterState[col] != ''
+        // check if row[col].toString().toLowerCase().includes(filterState[col]).
+        // If it passes all non-empty filters, we display it.
+        rows.forEach(rowObj => {
+          let keep = true;
+          for (let col of cols) {
+            const term = filterState[col];
+            if (term) {
+              const cellVal = (rowObj[col] || '').toString().toLowerCase();
+              if (!cellVal.includes(term)) {
+                keep = false;
+                break;
+              }
+            }
+          }
+          if (keep) {
+            const tr = document.createElement('tr');
+            cols.forEach(col => {
+              const td = document.createElement('td');
+              td.textContent = rowObj[col];
+              tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+          }
+        });
+      }
+
+      // 6. Initial render
+      renderTable();
+    })();
+  </script>
+</body>
+</html>
